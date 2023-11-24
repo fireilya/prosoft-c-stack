@@ -1,42 +1,162 @@
 #include "cstack.h"
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef unsigned int size;
+typedef unsigned int index_t;
+typedef int error;
 
 #define UNUSED(VAR) (void)(VAR)
 
+struct {
+    index_t* indexes;
+    index_t write_ptr;
+    index_t read_ptr;
+    size count;
+} deleted_stacks_FIFO={NULL, 0, 0, 0};
+
+struct stack_node {
+    struct stack_node* prev;
+    void* data;
+    size data_size;
+    size count;
+};
+
+struct {
+    struct stack_node** data;
+    size size;
+    size count;
+} stacks_archive={NULL, 0, 0};
+
+error init_stack_archive(void) {
+    stacks_archive.size = 4;
+    stacks_archive.data = calloc(stacks_archive.size, sizeof(struct stack_node*));
+    deleted_stacks_FIFO.indexes = calloc(stacks_archive.size, sizeof(index_t));
+    if (!stacks_archive.data) return 1;
+    return 0;
+}
+
+error expand_stack_archive(void) {
+    struct stack_node** new_archive = calloc(stacks_archive.size * 2, sizeof(struct stack_node*));
+    index_t* new_indexes = calloc(stacks_archive.size * 2, sizeof(index_t));
+    if (!new_archive || !new_indexes) return 1;
+    memcpy(new_archive, stacks_archive.data, stacks_archive.size * sizeof(struct stack_node*));
+    memcpy(new_indexes, deleted_stacks_FIFO.indexes, stacks_archive.size * sizeof(index_t));
+    stacks_archive.size *= 2;
+    free(stacks_archive.data);
+    free(deleted_stacks_FIFO.indexes);
+    stacks_archive.data = new_archive;
+    deleted_stacks_FIFO.indexes = new_indexes;
+    return 0;
+}
+
+void push_null_index(hstack_t hstack) {
+    deleted_stacks_FIFO.indexes[deleted_stacks_FIFO.write_ptr++] = hstack;
+    deleted_stacks_FIFO.write_ptr %= stacks_archive.size;
+    deleted_stacks_FIFO.count++;
+}
+
+index_t pop_null_index() {
+    if (!deleted_stacks_FIFO.count) return stacks_archive.count;
+    index_t poped_index = deleted_stacks_FIFO.indexes[deleted_stacks_FIFO.read_ptr++];
+    deleted_stacks_FIFO.read_ptr %= stacks_archive.size;
+    deleted_stacks_FIFO.count--;
+    return poped_index;
+}
+
+hstack_t add_stack(struct stack_node* stack_pointer){
+    if (!stacks_archive.data)
+    {
+        if (init_stack_archive()) return -1;
+    }
+
+    if (stacks_archive.size==stacks_archive.count)
+    {
+        if (expand_stack_archive()) return -1; 
+    }
+    index_t place_index = pop_null_index();
+    stacks_archive.data [place_index] = stack_pointer;
+    stacks_archive.count++;
+    return place_index;
+}
+
 hstack_t stack_new(void)
 {
-    return -1;
+    struct stack_node* stack_node = malloc(sizeof(struct stack_node));
+    if (!stack_node) return -1;
+    stack_node->data = NULL;
+    stack_node->data_size = 0;
+    stack_node->prev = NULL;
+    stack_node->count = 0;
+    return add_stack(stack_node);
 }
 
 void stack_free(const hstack_t hstack)
 {
-    UNUSED(hstack);
+    if (hstack < 0 || hstack >= stacks_archive.size) return;
+    while (stacks_archive.data[hstack]->count)
+    {
+        int buff_size = stacks_archive.data[hstack]->data_size;
+        void* buff = malloc(buff_size);
+        stack_pop(hstack, buff, buff_size);
+        free(buff);
+    }
+    push_null_index(hstack);
+    free(stacks_archive.data[hstack]);
+    stacks_archive.data[hstack] = NULL;
 }
 
-int stack_valid_handler(const hstack_t hstack)
+int stack_valid_handler(const hstack_t hstack) 
 {
-    UNUSED(hstack);
-    return 1;
+    return hstack >= 0 && hstack < stacks_archive.size && stacks_archive.data[hstack] ? 0 : 1;
 }
 
 unsigned int stack_size(const hstack_t hstack)
 {
-    UNUSED(hstack);
+    if (hstack >= 0 && hstack < stacks_archive.size && stacks_archive.data[hstack])
+    {
+        return stacks_archive.data[hstack]->count;
+    }
     return 0;
 }
 
 void stack_push(const hstack_t hstack, const void* data_in, const unsigned int size)
 {
-    UNUSED(hstack);
-    UNUSED(data_in);
-    UNUSED(size);
+    if (data_in && hstack >= 0 && hstack < stacks_archive.size && stacks_archive.data[hstack] && size > 0)
+    {
+        struct stack_node* node = stacks_archive.data[hstack]->count 
+            ? malloc(sizeof(struct stack_node)) 
+            : stacks_archive.data[hstack];
+
+        if (node)
+        {
+            node->data = malloc(size);
+
+            if (node->data)
+            {
+                node->prev = node->count ? stacks_archive.data[hstack] : NULL;
+                node->data_size = size;
+                node->count = node->count ? node->prev->count + 1 : 1;
+                memcpy(node->data, data_in, size); 
+                stacks_archive.data[hstack] = node;
+            }
+        }
+    }
 }
 
 unsigned int stack_pop(const hstack_t hstack, void* data_out, const unsigned int size)
 {
-    UNUSED(hstack);
-    UNUSED(data_out);
-    UNUSED(size);
-    return 0;
+    if (hstack < 0 || hstack >= stacks_archive.size || !data_out) return 0;
+    if (!stacks_archive.data[hstack]) return 0;
+    struct stack_node* node = stacks_archive.data[hstack];
+    if (node->data_size > size || !node->count) return 0;
+    unsigned int value_to_return = node->data_size;
+    memcpy(data_out, node->data, value_to_return);
+    if (node->prev) { stacks_archive.data[hstack] = node->prev; }
+    else { stacks_archive.data[hstack]->count -= 1; }
+    free(node->data);
+    if (node->count) free(node); 
+    return value_to_return;
 }
 
