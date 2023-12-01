@@ -3,9 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef unsigned int size;
 typedef unsigned int index_t;
-typedef int error;
+typedef int error_t;
 
 #define UNUSED(VAR) (void)(VAR)
 
@@ -13,23 +12,23 @@ struct {
     index_t* indexes;
     index_t write_ptr;
     index_t read_ptr;
-    size count;
+    int count;
 } deleted_stacks_FIFO={NULL, 0, 0, 0};
 
 struct stack_node {
     struct stack_node* prev;
     void* data;
-    size data_size;
-    size count;
+    int data_size;
+    int count;
 };
 
 struct {
     struct stack_node** data;
-    size size;
-    size count;
+    int size;
+    int count;
 } stacks_archive={NULL, 0, 0};
 
-error init_stack_archive(void) {
+error_t init_stack_archive(void) {
     stacks_archive.size = 4;
     stacks_archive.data = calloc(stacks_archive.size, sizeof(struct stack_node*));
     deleted_stacks_FIFO.indexes = calloc(stacks_archive.size, sizeof(index_t));
@@ -37,7 +36,7 @@ error init_stack_archive(void) {
     return 0;
 }
 
-error expand_stack_archive(void) {
+error_t expand_stack_archive(void) {
     struct stack_node** new_archive = calloc(stacks_archive.size * 2, sizeof(struct stack_node*));
     index_t* new_indexes = calloc(stacks_archive.size * 2, sizeof(index_t));
     if (!new_archive || !new_indexes) return 1;
@@ -57,7 +56,7 @@ void push_null_index(hstack_t hstack) {
     deleted_stacks_FIFO.count++;
 }
 
-index_t pop_null_index() {
+index_t pop_null_index(void) {
     if (!deleted_stacks_FIFO.count) return stacks_archive.count;
     index_t poped_index = deleted_stacks_FIFO.indexes[deleted_stacks_FIFO.read_ptr++];
     deleted_stacks_FIFO.read_ptr %= stacks_archive.size;
@@ -150,7 +149,7 @@ unsigned int stack_pop(const hstack_t hstack, void* data_out, const unsigned int
     if (hstack < 0 || hstack >= stacks_archive.size || !data_out) return 0;
     if (!stacks_archive.data[hstack]) return 0;
     struct stack_node* node = stacks_archive.data[hstack];
-    if (node->data_size > size || !node->count) return 0;
+    if ((unsigned int)node->data_size > size || !node->count) return 0;
     unsigned int value_to_return = node->data_size;
     memcpy(data_out, node->data, value_to_return);
     if (node->prev) { stacks_archive.data[hstack] = node->prev; }
