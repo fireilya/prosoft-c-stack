@@ -90,7 +90,7 @@ void stack_free(const hstack_t hstack)
 {
     if (hstack < 0 || (unsigned)hstack >= stacks_archive.size) return;
     struct stack_node* node = stacks_archive.data[hstack];
-    while (node && node->count)
+    while (node)
     {
         free(node->data);
         struct stack_node* prev_node = node->prev;
@@ -122,9 +122,9 @@ void stack_push(const hstack_t hstack, const void* data_in, const unsigned int s
         struct stack_node* node = stacks_archive.data[hstack]->count 
             ? malloc(sizeof(struct stack_node)) 
             : stacks_archive.data[hstack];
-        node->count = stacks_archive.data[hstack]->count;
         if (node)
         {
+            node->count = stacks_archive.data[hstack]->count;
             node->data = malloc(size);
 
             if (node->data)
@@ -152,6 +152,7 @@ unsigned int stack_pop(const hstack_t hstack, void* data_out, const unsigned int
     if (node->prev) { stacks_archive.data[hstack] = node->prev; }
     else { stacks_archive.data[hstack]->count -= 1; }
     free(node->data);
+    node->data = NULL;
     if (node->count) free(node); 
     return value_to_return;
 }
