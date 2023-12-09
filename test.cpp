@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-
 extern "C" {
 #include "cstack.h"
 }
+
 
 TEST(AllAPITest, BadStackHandler)
 {
